@@ -11,8 +11,6 @@ cargo init
 
 ```zsh
 rustup component add clippy
-cargo clippy
-
 (for CI ) cargo clippy --all-targets --all-features -- -D warnings
 ```
 
@@ -20,7 +18,6 @@ cargo clippy
 
 ```zsh
 rustup component add rustfmt
-cargo fmt
 rustfmt --print-config default rustfmt.toml
 ```
 
@@ -28,4 +25,29 @@ rustfmt --print-config default rustfmt.toml
 
 ```zsh
 curl https://raw.githubusercontent.com/github/gitignore/main/Rust.gitignore -o .gitignore
+```
+
+5. add cargo-edit.
+
+```zsh
+cargo install cargo-edit
+```
+
+6. add rust-toolchain.toml.
+
+```rust-toolchain.toml
+[toolchain]
+channel = "1.89.0"
+components = ["clippy", "rustfmt"]
+```
+※ rust-toolchain.toml and mise.toml have active rust version. 
+
+7. add Makefile.
+
+```Makefile
+# initialize
+.PHONY: init
+init:
+	@echo "Initializing project..."
+	cargo install cargo-edit
 ```
