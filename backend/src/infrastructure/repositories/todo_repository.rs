@@ -45,10 +45,7 @@ impl TodoRepository for TodoRepositoryImpl {
     ) -> Result<Vec<Todo>, crate::domain::repositories::errors::RepositoryError> {
         let todos: Vec<TodoRecord> = sqlx::query_as("SELECT * FROM todos")
             .fetch_all(&self.pool)
-            .await
-            .map_err(|e| {
-                crate::domain::repositories::errors::RepositoryError::Unexpected(e.to_string())
-            })?;
+            .await?;
         Ok(todos.into_iter().map(Todo::from).collect())
     }
 
@@ -59,10 +56,7 @@ impl TodoRepository for TodoRepositoryImpl {
         let todo: Option<TodoRecord> = sqlx::query_as("SELECT * FROM todos WHERE id = $1")
             .bind(id)
             .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| {
-                crate::domain::repositories::errors::RepositoryError::Unexpected(e.to_string())
-            })?;
+            .await?;
         Ok(todo.map(Todo::from))
     }
 
@@ -80,10 +74,7 @@ impl TodoRepository for TodoRepositoryImpl {
         .bind(Utc::now())
         .bind(Utc::now())
         .fetch_one(&self.pool)
-        .await
-        .map_err(|e| {
-            crate::domain::repositories::errors::RepositoryError::Unexpected(e.to_string())
-        })?;
+        .await?;
         Ok(Todo::from(created_todo))
     }
 
@@ -100,10 +91,7 @@ impl TodoRepository for TodoRepositoryImpl {
         .bind(Utc::now())
         .bind(todo.id)
         .fetch_one(&self.pool)
-        .await
-        .map_err(|e| {
-            crate::domain::repositories::errors::RepositoryError::Unexpected(e.to_string())
-        })?;
+        .await?;
         Ok(Todo::from(updated_todo))
     }
 
@@ -114,15 +102,12 @@ impl TodoRepository for TodoRepositoryImpl {
         sqlx::query("DELETE FROM todos WHERE id = $1")
             .bind(id)
             .execute(&self.pool)
-            .await
-            .map_err(|e| {
-                crate::domain::repositories::errors::RepositoryError::Unexpected(e.to_string())
-            })?;
+            .await?;
         Ok(())
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "db-tests"))]
 mod tests {
     use super::*;
     use sqlx::postgres::PgPoolOptions;
