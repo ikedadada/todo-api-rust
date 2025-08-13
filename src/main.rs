@@ -11,6 +11,7 @@ struct Hello {
 #[tokio::main]
 async fn main() {
     let app = Router::new()
+        .fallback(fallback)
         .route("/", get(|| async { "Hello, World!" }))
         .route(
             "/hello",
@@ -23,4 +24,11 @@ async fn main() {
     println!("Listening on http://{}", listener.local_addr().unwrap());
 
     serve(listener, app).await.unwrap();
+}
+
+async fn fallback(uri: axum::http::Uri) -> impl axum::response::IntoResponse {
+    (
+        axum::http::StatusCode::NOT_FOUND,
+        format!("No route found for {}", uri),
+    )
 }
