@@ -2,6 +2,7 @@ use uuid::Uuid;
 
 use crate::domain::models::errors::DomainError;
 
+#[derive(Debug, Clone)]
 pub struct Todo {
     pub id: Uuid,
     pub title: String,
@@ -17,6 +18,11 @@ impl Todo {
             description,
             completed: false,
         }
+    }
+
+    pub fn update(&mut self, title: String, description: Option<String>) {
+        self.title = title;
+        self.description = description;
     }
 
     pub fn mark_completed(&mut self) -> Result<(), DomainError> {
@@ -46,6 +52,14 @@ mod tests {
         assert_eq!(todo.title, "Test Todo");
         assert_eq!(todo.description, None);
         assert!(!todo.completed);
+    }
+
+    #[test]
+    fn test_todo_update() {
+        let mut todo = Todo::new("Test Todo".into(), None);
+        todo.update("Updated Todo".into(), Some("Updated Description".into()));
+        assert_eq!(todo.title, "Updated Todo");
+        assert_eq!(todo.description, Some("Updated Description".into()));
     }
 
     #[test]

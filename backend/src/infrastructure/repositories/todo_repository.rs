@@ -52,12 +52,12 @@ impl TodoRepository for TodoRepositoryImpl {
     async fn find_by_id(
         &self,
         id: Uuid,
-    ) -> Result<Option<Todo>, crate::domain::repositories::errors::RepositoryError> {
-        let todo: Option<TodoRecord> = sqlx::query_as("SELECT * FROM todos WHERE id = $1")
+    ) -> Result<Todo, crate::domain::repositories::errors::RepositoryError> {
+        let todo: TodoRecord = sqlx::query_as("SELECT * FROM todos WHERE id = $1")
             .bind(id)
-            .fetch_optional(&self.pool)
+            .fetch_one(&self.pool)
             .await?;
-        Ok(todo.map(Todo::from))
+        Ok(Todo::from(todo))
     }
 
     async fn create(
@@ -142,8 +142,7 @@ mod tests {
 
         // Test find_by_id
         let found_todo = repo.find_by_id(created_todo.id).await.unwrap();
-        assert!(found_todo.is_some());
-        assert_eq!(found_todo.unwrap().title, "Test Todo");
+        assert_eq!(found_todo.title, "Test Todo");
 
         // Test update
         let mut updated_todo = created_todo;
@@ -153,7 +152,7 @@ mod tests {
 
         // Test delete
         repo.delete(updated_result.id).await.unwrap();
-        let deleted_todo = repo.find_by_id(updated_result.id).await.unwrap();
-        assert!(deleted_todo.is_none());
+        let deleted_todo = repo.find_by_id(updated_result.id).await;
+        assert!(deleted_todo.is_err());
     }
 }
