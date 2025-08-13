@@ -1,36 +1,17 @@
 use std::time::Duration;
 
-use axum::{
-    BoxError, Json, Router, error_handling::HandleErrorLayer, http::StatusCode, routing::get, serve,
-};
+use axum::{BoxError, Router, error_handling::HandleErrorLayer, http::StatusCode, serve};
 
-use serde::{Deserialize, Serialize};
+use todo_api_rust::presentation;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 
-#[derive(Deserialize, Serialize)]
-struct Hello {
-    message: String,
-}
-
 #[tokio::main]
 async fn main() {
-    let app = Router::new()
-        .fallback(fallback)
-        .route("/", get(|| async { "Hello, World!" }))
-        .route(
-            "/hello",
-            get(|| async { "Hello from /hello!" }).post(|Json(input): Json<Hello>| async move {
-                format!("Hello from /hello! You sent: {}", input.message)
-            }),
-        )
-        .route(
-            "/wait",
-            get(|| async {
-                tokio::time::sleep(tokio::time::Duration::from_secs(20)).await;
-                "Hello from /wait!"
-            }),
-        )
+    let app = app()
+        .fallback(|uri: axum::http::Uri| async move {
+            (StatusCode::NOT_FOUND, format!("No route found for {}", uri))
+        })
         .layer(
             ServiceBuilder::new()
                 // `timeout` will produce an error if the handler takes
@@ -64,8 +45,14 @@ async fn main() {
         .unwrap();
 }
 
-async fn fallback(uri: axum::http::Uri) -> impl axum::response::IntoResponse {
-    (StatusCode::NOT_FOUND, format!("No route found for {}", uri))
+fn app() -> Router {
+    Router::new()
+        .nest(
+            "/health",
+            presentation::health_handler::create_health_router(),
+        )
+        .nest("/hello", presentation::hello_handler::create_hello_router())
+        .nest("/wait", presentation::wait_handler::create_wait_router())
 }
 
 async fn shutdown_signal() {
