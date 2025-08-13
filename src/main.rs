@@ -1,7 +1,8 @@
 use std::time::Duration;
 
-use axum::{BoxError, Router, error_handling::HandleErrorLayer, http::StatusCode, serve};
+use axum::{BoxError, Router, error_handling::HandleErrorLayer, serve};
 
+use todo_api_rust::errors::AppError;
 use todo_api_rust::presentation;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
@@ -10,27 +11,19 @@ use tower::ServiceBuilder;
 async fn main() {
     let app = app()
         .fallback(|uri: axum::http::Uri| async move {
-            (StatusCode::NOT_FOUND, format!("No route found for {}", uri))
+            AppError::NotFound(format!("No route found for {}", uri))
         })
         .layer(
             ServiceBuilder::new()
                 // `timeout` will produce an error if the handler takes
                 // too long so we must handle those
-                .layer(HandleErrorLayer::new(
-                    async |err: BoxError| -> (StatusCode, String) {
-                        if err.is::<tower::timeout::error::Elapsed>() {
-                            (
-                                StatusCode::REQUEST_TIMEOUT,
-                                "Request took too long".to_string(),
-                            )
-                        } else {
-                            (
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                format!("Unhandled internal error: {err}"),
-                            )
-                        }
-                    },
-                ))
+                .layer(HandleErrorLayer::new(async |err: BoxError| -> AppError {
+                    if err.is::<tower::timeout::error::Elapsed>() {
+                        AppError::Timeout
+                    } else {
+                        AppError::Internal(format!("Unhandled internal error: {err}"))
+                    }
+                }))
                 .timeout(Duration::from_secs(10)),
         );
 
