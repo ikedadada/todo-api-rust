@@ -1,6 +1,6 @@
 pub struct Config {
     pub database_url: String,
-    pub server_port: String,
+    pub server_port: u16,
 }
 
 impl Default for Config {
@@ -16,7 +16,10 @@ impl Default for Config {
             "postgres://{}:{}@{}:{}/{}",
             db_user, db_password, db_host, db_port, db_name
         );
-        let server_port = std::env::var("SERVER_PORT").expect("SERVER_PORT must be set");
+        let server_port_str = std::env::var("SERVER_PORT").expect("SERVER_PORT must be set");
+        let server_port: u16 = server_port_str
+            .parse()
+            .expect("SERVER_PORT must be a valid u16 port number");
         Config {
             database_url,
             server_port,
