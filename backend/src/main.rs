@@ -3,6 +3,7 @@ use std::time::Duration;
 use axum::{BoxError, Router, error_handling::HandleErrorLayer, serve};
 
 use todo_api_rust::application_service::usecase::todo_usecase::TodoUsecaseImpl;
+use todo_api_rust::infrastructure::config::Config;
 use todo_api_rust::infrastructure::repositories::todo_repository::TodoRepositoryImpl;
 use todo_api_rust::presentation;
 use todo_api_rust::presentation::errors::{AppError, ErrorBody};
@@ -11,7 +12,8 @@ use tower::ServiceBuilder;
 
 #[tokio::main]
 async fn main() {
-    let app = app()
+    let config = Config::default();
+    let app = app(&config)
         .await
         .fallback(|uri: axum::http::Uri| async move {
             AppError::NotFound(ErrorBody {
@@ -36,7 +38,13 @@ async fn main() {
                 .timeout(Duration::from_secs(10)),
         );
 
-    let listener = TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let listener = TcpListener::bind(format!(
+        "{}:{}",
+        std::net::Ipv4Addr::UNSPECIFIED,
+        config.server_port
+    ))
+    .await
+    .unwrap();
     println!("Listening on http://{}", listener.local_addr().unwrap());
 
     serve(listener, app)
@@ -47,8 +55,8 @@ async fn main() {
         .unwrap();
 }
 
-async fn app() -> Router {
-    let database_url = "postgres://user:password@db/todo_api";
+async fn app(config: &Config) -> Router {
+    let database_url = &config.database_url;
 
     let pool = sqlx::PgPool::connect(database_url)
         .await
