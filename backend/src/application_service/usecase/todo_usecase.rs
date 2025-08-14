@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{
     application_service::usecase::errors::UsecaseError,
     domain::{models::todo::Todo, repositories::todo_repository::TodoRepository},
@@ -25,19 +27,20 @@ pub trait TodoUsecase {
     async fn unmark_todo_completed(&self, id: Uuid) -> Result<Todo, UsecaseError>;
 }
 
-#[derive(Clone)]
-pub struct TodoUsecaseImpl<T: TodoRepository + Clone> {
-    repository: T,
+pub struct TodoUsecaseImpl<T: TodoRepository> {
+    repository: Arc<T>,
 }
 
-impl<T: TodoRepository + Clone> TodoUsecaseImpl<T> {
+impl<T: TodoRepository> TodoUsecaseImpl<T> {
     pub fn new(repository: T) -> Self {
-        Self { repository }
+        Self {
+            repository: Arc::new(repository),
+        }
     }
 }
 
 #[async_trait]
-impl<T: TodoRepository + Send + Sync + Clone> TodoUsecase for TodoUsecaseImpl<T> {
+impl<T: TodoRepository + Send + Sync> TodoUsecase for TodoUsecaseImpl<T> {
     async fn get_all_todos(&self) -> Result<Vec<Todo>, UsecaseError> {
         let todos = self.repository.find_all().await?;
         Ok(todos)
@@ -71,7 +74,7 @@ impl<T: TodoRepository + Send + Sync + Clone> TodoUsecase for TodoUsecaseImpl<T>
     }
 
     async fn delete_todo(&self, id: Uuid) -> Result<(), UsecaseError> {
-        let _ = self.repository.delete(id).await?;
+        self.repository.delete(id).await?;
         Ok(())
     }
 
@@ -126,13 +129,13 @@ mod tests {
     #[async_trait]
     impl TodoRepository for MockTodoRepository {
         async fn find_all(&self) -> Result<Vec<Todo>, RepositoryError> {
-            Ok(self.todos.lock().unwrap().clone())
+            let todos = self.todos.lock().unwrap();
+            Ok(todos.clone())
         }
 
         async fn find_by_id(&self, id: Uuid) -> Result<Todo, RepositoryError> {
-            self.todos
-                .lock()
-                .unwrap()
+            let todos = self.todos.lock().unwrap();
+            todos
                 .iter()
                 .find(|todo| todo.id == id)
                 .cloned()
@@ -146,19 +149,20 @@ mod tests {
 
         async fn update(&self, todo: Todo) -> Result<Todo, RepositoryError> {
             let mut todos = self.todos.lock().unwrap();
-            let index = todos.iter().position(|t| t.id == todo.id);
-            if let Some(index) = index {
-                todos[index] = todo.clone();
-                Ok(todo)
-            } else {
-                Err(RepositoryError::NotFound)
-            }
+            todos
+                .iter_mut()
+                .find(|t| t.id == todo.id)
+                .map(|t| {
+                    *t = todo.clone();
+                    todo
+                })
+                .ok_or(RepositoryError::NotFound)
         }
 
         async fn delete(&self, id: Uuid) -> Result<(), RepositoryError> {
-            let index = self.todos.lock().unwrap().iter().position(|t| t.id == id);
-            if let Some(index) = index {
-                self.todos.lock().unwrap().remove(index);
+            let mut todos = self.todos.lock().unwrap();
+            if let Some(index) = todos.iter().position(|t| t.id == id) {
+                todos.remove(index);
                 Ok(())
             } else {
                 Err(RepositoryError::NotFound)
@@ -169,7 +173,7 @@ mod tests {
     #[tokio::test]
     async fn test_todo_usecase_impl_get_all_todos() {
         let repository = MockTodoRepository::new();
-        let usecase = TodoUsecaseImpl::new(repository.clone());
+        let usecase = TodoUsecaseImpl::new(repository);
 
         let result = usecase.get_all_todos().await;
 
@@ -183,7 +187,7 @@ mod tests {
     #[tokio::test]
     async fn test_todo_usecase_impl_get_todo_by_id() {
         let repository = MockTodoRepository::new();
-        let usecase = TodoUsecaseImpl::new(repository.clone());
+        let usecase = TodoUsecaseImpl::new(repository);
 
         let result = usecase
             .get_todo_by_id(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap())
@@ -207,7 +211,8 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap().title, "New Todo");
-        assert_eq!(repository.todos.lock().unwrap().len(), 3);
+        let len = { repository.todos.lock().unwrap().len() };
+        assert_eq!(len, 3);
     }
 
     #[tokio::test]
@@ -229,7 +234,10 @@ mod tests {
         assert_eq!(todo.description, Some("Updated Description".into()));
         assert!(!todo.completed);
 
-        let todos = repository.todos.lock().unwrap();
+        let todos = {
+            let todos = repository.todos.lock().unwrap();
+            todos.clone()
+        };
         assert_eq!(todos.len(), 2);
         assert_eq!(todos[0].title, "Updated Todo");
         assert_eq!(todos[0].description, Some("Updated Description".into()));
@@ -246,7 +254,8 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
-        assert_eq!(repository.todos.lock().unwrap().len(), 1);
+        let len = { repository.todos.lock().unwrap().len() };
+        assert_eq!(len, 1);
     }
 
     #[tokio::test]
@@ -259,7 +268,8 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
-        assert!(repository.todos.lock().unwrap()[0].completed);
+        let completed = { repository.todos.lock().unwrap()[0].completed };
+        assert!(completed);
     }
 
     #[tokio::test]
@@ -272,6 +282,7 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
-        assert!(!repository.todos.lock().unwrap()[0].completed);
+        let completed = { repository.todos.lock().unwrap()[1].completed };
+        assert!(!completed);
     }
 }
