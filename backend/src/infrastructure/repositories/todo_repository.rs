@@ -27,6 +27,7 @@ impl From<TodoRecord> for Todo {
     }
 }
 
+#[derive(Clone)]
 pub struct TodoRepositoryImpl {
     pool: DbPool,
 }

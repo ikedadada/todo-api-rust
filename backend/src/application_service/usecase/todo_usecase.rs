@@ -27,6 +27,7 @@ pub trait TodoUsecase {
     async fn unmark_todo_completed(&self, id: Uuid) -> Result<Todo, UsecaseError>;
 }
 
+#[derive(Clone)]
 pub struct TodoUsecaseImpl<T: TodoRepository> {
     repository: Arc<T>,
 }

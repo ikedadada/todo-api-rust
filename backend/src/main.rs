@@ -2,7 +2,9 @@ use std::time::Duration;
 
 use axum::{BoxError, Router, error_handling::HandleErrorLayer, serve};
 
+use todo_api_rust::application_service::usecase::todo_usecase::TodoUsecaseImpl;
 use todo_api_rust::errors::AppError;
+use todo_api_rust::infrastructure::repositories::todo_repository::TodoRepositoryImpl;
 use todo_api_rust::presentation;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
@@ -10,6 +12,7 @@ use tower::ServiceBuilder;
 #[tokio::main]
 async fn main() {
     let app = app()
+        .await
         .fallback(|uri: axum::http::Uri| async move {
             AppError::NotFound(format!("No route found for {}", uri))
         })
@@ -38,7 +41,15 @@ async fn main() {
         .unwrap();
 }
 
-fn app() -> Router {
+async fn app() -> Router {
+    let database_url = "postgres://user:password@db/todo_api";
+
+    let pool = sqlx::PgPool::connect(database_url)
+        .await
+        .expect("Failed to connect to the database");
+
+    let todo_repository = TodoRepositoryImpl::new(pool.clone());
+    let todo_usecase = TodoUsecaseImpl::new(todo_repository);
     Router::new()
         .nest(
             "/health",
@@ -46,6 +57,10 @@ fn app() -> Router {
         )
         .nest("/hello", presentation::hello_handler::create_hello_router())
         .nest("/wait", presentation::wait_handler::create_wait_router())
+        .nest(
+            "/todos",
+            presentation::todo_handler::create_todo_router(todo_usecase),
+        )
 }
 
 async fn shutdown_signal() {
