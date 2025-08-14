@@ -38,9 +38,13 @@ async fn main() {
                 .timeout(Duration::from_secs(10)),
         );
 
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", config.server_port))
-        .await
-        .unwrap();
+    let listener = TcpListener::bind(format!(
+        "{}:{}",
+        std::net::Ipv4Addr::UNSPECIFIED,
+        config.server_port
+    ))
+    .await
+    .unwrap();
     println!("Listening on http://{}", listener.local_addr().unwrap());
 
     serve(listener, app)
