@@ -1,16 +1,20 @@
-use axum::{Router, extract::Query, routing::get};
+use axum::{Router, routing::get};
 use serde::Deserialize;
+use validator::Validate;
 
-#[derive(Deserialize)]
+use crate::presentation::validator::ValidatedQuery;
+
+#[derive(Deserialize, Validate)]
 struct WaitParams {
-    delay: Option<u64>,
+    #[validate(range(min = 1, max = 60, message = "Delay must be between 1 and 60 seconds"))]
+    sec: Option<u64>,
 }
 pub fn create_wait_router() -> Router {
     Router::new().route("/", get(get_wait))
 }
 
-async fn get_wait(Query(params): Query<WaitParams>) -> String {
-    let delay = params.delay.unwrap_or(10);
-    tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
-    format!("Waited {} seconds", delay)
+async fn get_wait(ValidatedQuery(params): ValidatedQuery<WaitParams>) -> String {
+    let sec = params.sec.unwrap_or(10);
+    tokio::time::sleep(tokio::time::Duration::from_secs(sec)).await;
+    format!("Waited {} seconds", sec)
 }

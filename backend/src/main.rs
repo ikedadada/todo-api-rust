@@ -3,9 +3,9 @@ use std::time::Duration;
 use axum::{BoxError, Router, error_handling::HandleErrorLayer, serve};
 
 use todo_api_rust::application_service::usecase::todo_usecase::TodoUsecaseImpl;
-use todo_api_rust::errors::AppError;
 use todo_api_rust::infrastructure::repositories::todo_repository::TodoRepositoryImpl;
 use todo_api_rust::presentation;
+use todo_api_rust::presentation::errors::{AppError, ErrorBody};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 
@@ -14,7 +14,10 @@ async fn main() {
     let app = app()
         .await
         .fallback(|uri: axum::http::Uri| async move {
-            AppError::NotFound(format!("No route found for {}", uri))
+            AppError::NotFound(ErrorBody {
+                code: "404",
+                message: format!("Resource not found for URI: {}", uri),
+            })
         })
         .layer(
             ServiceBuilder::new()
@@ -24,7 +27,10 @@ async fn main() {
                     if err.is::<tower::timeout::error::Elapsed>() {
                         AppError::Timeout
                     } else {
-                        AppError::Internal(format!("Unhandled internal error: {err}"))
+                        AppError::Internal(ErrorBody {
+                            code: "500",
+                            message: format!("Unhandled internal error: {}", err),
+                        })
                     }
                 }))
                 .timeout(Duration::from_secs(10)),
