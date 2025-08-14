@@ -25,7 +25,7 @@ impl From<UsecaseError> for AppError {
                 code: "404",
                 message: "Resource not found".to_string(),
             }),
-            UsecaseError::Conflict(msg) => AppError::Internal(ErrorBody {
+            UsecaseError::Conflict(msg) => AppError::Conflict(ErrorBody {
                 code: "409",
                 message: format!("Conflict: {}", msg),
             }),
