@@ -9,6 +9,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_NAME=todo_api
+      - DATABASE_URL=postgres://user:password@db:5432/todo_api # For SeaORM migration
       - SERVER_PORT=3000
     ports:
       - "3000:3000"
