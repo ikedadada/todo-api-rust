@@ -21,9 +21,9 @@ pub enum AppError {
 impl From<UsecaseError> for AppError {
     fn from(err: UsecaseError) -> Self {
         match err {
-            UsecaseError::NotFound => AppError::NotFound(ErrorBody {
+            UsecaseError::NotFound(msg) => AppError::NotFound(ErrorBody {
                 code: "404",
-                message: "Resource not found".to_string(),
+                message: format!("Not Found: {}", msg),
             }),
             UsecaseError::Conflict(msg) => AppError::Conflict(ErrorBody {
                 code: "409",
