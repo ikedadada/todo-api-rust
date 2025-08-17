@@ -3,8 +3,8 @@ use crate::domain::repositories::todo_repository::TodoRepository;
 use crate::infrastructure::repositories::data_models::prelude::Todos as TodoTable;
 use crate::infrastructure::repositories::data_models::todos;
 use async_trait::async_trait;
+use chrono::Utc;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DbConn, EntityTrait};
-use sqlx::types::chrono::Utc;
 use uuid::Uuid;
 
 impl From<todos::Model> for Todo {
