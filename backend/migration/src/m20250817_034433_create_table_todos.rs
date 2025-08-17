@@ -9,31 +9,31 @@ impl MigrationTrait for Migration {
         manager
             .create_table(
                 Table::create()
-                    .table(Todo::Table)
+                    .table(Todos::Table)
                     .if_not_exists()
                     .col(
-                        ColumnDef::new(Todo::Id)
+                        ColumnDef::new(Todos::Id)
                             .uuid()
                             .extra("DEFAULT gen_random_uuid()")
                             .primary_key()
                             .not_null(),
                     )
-                    .col(ColumnDef::new(Todo::Title).string_len(255).not_null())
-                    .col(ColumnDef::new(Todo::Description).text())
+                    .col(ColumnDef::new(Todos::Title).string_len(255).not_null())
+                    .col(ColumnDef::new(Todos::Description).text())
                     .col(
-                        ColumnDef::new(Todo::Completed)
+                        ColumnDef::new(Todos::Completed)
                             .boolean()
                             .default(false)
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(Todo::CreatedAt)
+                        ColumnDef::new(Todos::CreatedAt)
                             .timestamp_with_time_zone()
                             .extra("DEFAULT (now() AT TIME ZONE 'Asia/Tokyo')")
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(Todo::UpdatedAt)
+                        ColumnDef::new(Todos::UpdatedAt)
                             .timestamp_with_time_zone()
                             .extra("DEFAULT (now() AT TIME ZONE 'Asia/Tokyo')")
                             .not_null(),
@@ -45,13 +45,13 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(Table::drop().table(Todo::Table).to_owned())
+            .drop_table(Table::drop().table(Todos::Table).to_owned())
             .await
     }
 }
 
 #[derive(DeriveIden)]
-enum Todo {
+enum Todos {
     Table,
     Id,
     Title,

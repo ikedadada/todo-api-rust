@@ -1,14 +1,14 @@
 use crate::domain::models::todo::Todo;
 use crate::domain::repositories::todo_repository::TodoRepository;
-use crate::infrastructure::repositories::data_models::prelude::Todo as TodoTable;
-use crate::infrastructure::repositories::data_models::todo;
+use crate::infrastructure::repositories::data_models::prelude::Todos as TodoTable;
+use crate::infrastructure::repositories::data_models::todos;
 use async_trait::async_trait;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DbConn, EntityTrait};
 use sqlx::types::chrono::Utc;
 use uuid::Uuid;
 
-impl From<todo::Model> for Todo {
-    fn from(model: todo::Model) -> Self {
+impl From<todos::Model> for Todo {
+    fn from(model: todos::Model) -> Self {
         Todo {
             id: model.id,
             title: model.title,
@@ -18,9 +18,9 @@ impl From<todo::Model> for Todo {
     }
 }
 
-impl From<Todo> for todo::ActiveModel {
+impl From<Todo> for todos::ActiveModel {
     fn from(todo: Todo) -> Self {
-        todo::ActiveModel {
+        todos::ActiveModel {
             id: Set(todo.id),
             title: Set(todo.title),
             description: Set(todo.description),
@@ -71,8 +71,8 @@ impl TodoRepository for TodoRepositoryImpl {
         &self,
         todo: Todo,
     ) -> Result<Todo, crate::domain::repositories::errors::RepositoryError> {
-        let todo: todo::ActiveModel = todo.into();
-        let todo: todo::Model = todo.insert(&self.conn).await?;
+        let todo: todos::ActiveModel = todo.into();
+        let todo: todos::Model = todo.insert(&self.conn).await?;
         Ok(todo.into())
     }
 
@@ -80,8 +80,8 @@ impl TodoRepository for TodoRepositoryImpl {
         &self,
         todo: Todo,
     ) -> Result<Todo, crate::domain::repositories::errors::RepositoryError> {
-        let todo: todo::ActiveModel = todo.into();
-        let todo: todo::Model = todo.update(&self.conn).await?;
+        let todo: todos::ActiveModel = todo.into();
+        let todo: todos::Model = todo.update(&self.conn).await?;
         Ok(Todo::from(todo))
     }
 
@@ -89,7 +89,7 @@ impl TodoRepository for TodoRepositoryImpl {
         &self,
         todo: Todo,
     ) -> Result<(), crate::domain::repositories::errors::RepositoryError> {
-        let todo: todo::ActiveModel = todo.into();
+        let todo: todos::ActiveModel = todo.into();
         todo.delete(&self.conn).await?;
         Ok(())
     }
