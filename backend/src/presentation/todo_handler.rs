@@ -94,8 +94,8 @@ async fn get_all_todos<C>(
 where
     C: Send + Sync + 'static,
 {
-    let conn = app_state.db.clone();
-    let todos = app_state.todo_usecase.get_all_todos(&conn).await?;
+    let conn = app_state.db.as_ref();
+    let todos = app_state.todo_usecase.get_all_todos(conn).await?;
     Ok((
         StatusCode::OK,
         Json(
@@ -114,8 +114,8 @@ async fn get_todo_by_id<C>(
 where
     C: Send + Sync + 'static,
 {
-    let conn = app_state.db;
-    let todo = app_state.todo_usecase.get_todo_by_id(&conn, id).await?;
+    let conn = app_state.db.as_ref();
+    let todo = app_state.todo_usecase.get_todo_by_id(conn, id).await?;
     Ok(Json(TodoResponse::from(todo)))
 }
 
@@ -126,10 +126,10 @@ async fn post_todo<C>(
 where
     C: Send + Sync + 'static,
 {
-    let conn = app_state.db;
+    let conn = app_state.db.as_ref();
     let todo = app_state
         .todo_usecase
-        .create_todo(&conn, input.title, input.description)
+        .create_todo(conn, input.title, input.description)
         .await?;
     Ok((StatusCode::CREATED, Json(TodoResponse::from(todo))))
 }
@@ -142,10 +142,10 @@ async fn update_todo<C>(
 where
     C: Send + Sync + 'static,
 {
-    let conn = app_state.db;
+    let conn = app_state.db.as_ref();
     let todo = app_state
         .todo_usecase
-        .update_todo(&conn, id, input.title, input.description)
+        .update_todo(conn, id, input.title, input.description)
         .await?;
     Ok((StatusCode::OK, Json(TodoResponse::from(todo))))
 }
@@ -157,8 +157,8 @@ async fn delete_todo<C>(
 where
     C: Send + Sync + 'static,
 {
-    let conn = app_state.db;
-    app_state.todo_usecase.delete_todo(&conn, id).await?;
+    let conn = app_state.db.as_ref();
+    app_state.todo_usecase.delete_todo(conn, id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -169,11 +169,8 @@ async fn mark_todo_completed<C>(
 where
     C: Send + Sync + 'static,
 {
-    let conn = app_state.db;
-    let todo = app_state
-        .todo_usecase
-        .mark_todo_completed(&conn, id)
-        .await?;
+    let conn = app_state.db.as_ref();
+    let todo = app_state.todo_usecase.mark_todo_completed(conn, id).await?;
     Ok((StatusCode::OK, Json(TodoResponse::from(todo))))
 }
 
@@ -184,10 +181,10 @@ async fn unmark_todo_completed<C>(
 where
     C: Send + Sync + 'static,
 {
-    let conn = app_state.db;
+    let conn = app_state.db.as_ref();
     let todo = app_state
         .todo_usecase
-        .unmark_todo_completed(&conn, id)
+        .unmark_todo_completed(conn, id)
         .await?;
     Ok((StatusCode::OK, Json(TodoResponse::from(todo))))
 }
