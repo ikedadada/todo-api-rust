@@ -1,40 +1,44 @@
 use crate::domain::models::todo::Todo;
 use crate::domain::repositories::todo_repository::TodoRepository;
-use crate::infrastructure::repositories::db::DbPool;
+use crate::infrastructure::repositories::data_models::prelude::Todo as TodoTable;
+use crate::infrastructure::repositories::data_models::todo;
 use async_trait::async_trait;
-use sqlx::prelude::FromRow;
-use sqlx::types::chrono::{DateTime, Utc};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, DbConn, EntityTrait};
+use sqlx::types::chrono::Utc;
 use uuid::Uuid;
 
-#[derive(FromRow)]
-pub struct TodoRecord {
-    pub id: Uuid,
-    pub title: String,
-    pub description: Option<String>,
-    pub completed: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+impl From<todo::Model> for Todo {
+    fn from(model: todo::Model) -> Self {
+        Todo {
+            id: model.id,
+            title: model.title,
+            description: model.description,
+            completed: model.completed,
+        }
+    }
 }
 
-impl From<TodoRecord> for Todo {
-    fn from(record: TodoRecord) -> Self {
-        Todo {
-            id: record.id,
-            title: record.title,
-            description: record.description,
-            completed: record.completed,
+impl From<Todo> for todo::ActiveModel {
+    fn from(todo: Todo) -> Self {
+        todo::ActiveModel {
+            id: Set(todo.id),
+            title: Set(todo.title),
+            description: Set(todo.description),
+            completed: Set(todo.completed),
+            created_at: Set(Utc::now().fixed_offset()),
+            updated_at: Set(Utc::now().fixed_offset()),
         }
     }
 }
 
 #[derive(Clone)]
 pub struct TodoRepositoryImpl {
-    pool: DbPool,
+    conn: DbConn,
 }
 
 impl TodoRepositoryImpl {
-    pub fn new(pool: DbPool) -> Self {
-        Self { pool }
+    pub fn new(conn: DbConn) -> Self {
+        Self { conn }
     }
 }
 
@@ -43,9 +47,7 @@ impl TodoRepository for TodoRepositoryImpl {
     async fn find_all(
         &self,
     ) -> Result<Vec<Todo>, crate::domain::repositories::errors::RepositoryError> {
-        let todos: Vec<TodoRecord> = sqlx::query_as("SELECT * FROM todos")
-            .fetch_all(&self.pool)
-            .await?;
+        let todos = TodoTable::find().all(&self.conn).await?;
         Ok(todos.into_iter().map(Todo::from).collect())
     }
 
@@ -53,56 +55,42 @@ impl TodoRepository for TodoRepositoryImpl {
         &self,
         id: Uuid,
     ) -> Result<Todo, crate::domain::repositories::errors::RepositoryError> {
-        let todo: TodoRecord = sqlx::query_as("SELECT * FROM todos WHERE id = $1")
-            .bind(id)
-            .fetch_one(&self.pool)
-            .await?;
-        Ok(Todo::from(todo))
+        let todo = TodoTable::find_by_id(id).one(&self.conn).await?;
+        match todo {
+            Some(todo) => Ok(Todo::from(todo)),
+            None => Err(
+                crate::domain::repositories::errors::RepositoryError::NotFound(format!(
+                    "Todo with id {} not found",
+                    id
+                )),
+            ),
+        }
     }
 
     async fn create(
         &self,
         todo: Todo,
     ) -> Result<Todo, crate::domain::repositories::errors::RepositoryError> {
-        let created_todo: TodoRecord = sqlx::query_as(
-            "INSERT INTO todos (id, title, description, completed, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-        )
-        .bind(todo.id)
-        .bind(todo.title)
-        .bind(todo.description)
-        .bind(todo.completed)
-        .bind(Utc::now())
-        .bind(Utc::now())
-        .fetch_one(&self.pool)
-        .await?;
-        Ok(Todo::from(created_todo))
+        let todo: todo::ActiveModel = todo.into();
+        let todo: todo::Model = todo.insert(&self.conn).await?;
+        Ok(todo.into())
     }
 
     async fn update(
         &self,
         todo: Todo,
     ) -> Result<Todo, crate::domain::repositories::errors::RepositoryError> {
-        let updated_todo: TodoRecord = sqlx::query_as(
-            "UPDATE todos SET title = $1, description = $2, completed = $3, updated_at = $4 WHERE id = $5 RETURNING *",
-        )
-        .bind(todo.title)
-        .bind(todo.description)
-        .bind(todo.completed)
-        .bind(Utc::now())
-        .bind(todo.id)
-        .fetch_one(&self.pool)
-        .await?;
-        Ok(Todo::from(updated_todo))
+        let todo: todo::ActiveModel = todo.into();
+        let todo: todo::Model = todo.update(&self.conn).await?;
+        Ok(Todo::from(todo))
     }
 
     async fn delete(
         &self,
-        id: Uuid,
+        todo: Todo,
     ) -> Result<(), crate::domain::repositories::errors::RepositoryError> {
-        sqlx::query("DELETE FROM todos WHERE id = $1")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        let todo: todo::ActiveModel = todo.into();
+        todo.delete(&self.conn).await?;
         Ok(())
     }
 }
@@ -110,7 +98,8 @@ impl TodoRepository for TodoRepositoryImpl {
 #[cfg(all(test, feature = "db-tests"))]
 mod tests {
     use super::*;
-    use sqlx::postgres::PgPoolOptions;
+    use migration::MigratorTrait;
+    use sea_orm::{ConnectOptions, Database};
     use testcontainers::{ImageExt, runners::AsyncRunner};
     use testcontainers_modules::postgres::Postgres;
 
@@ -121,15 +110,14 @@ mod tests {
         let port = pg.get_host_port_ipv4(5432).await.expect("get port");
         let url = &format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres",);
 
-        let pool = PgPoolOptions::new()
-            .max_connections(5)
-            .connect(url)
+        let opt = ConnectOptions::new(url.to_string());
+        let conn = Database::connect(opt).await.expect("connect db");
+
+        migration::Migrator::up(&conn, None)
             .await
-            .expect("connect db");
+            .expect("create migrator");
 
-        sqlx::migrate!().run(&pool).await.expect("run migrations");
-
-        let repo = TodoRepositoryImpl::new(pool);
+        let repo = TodoRepositoryImpl::new(conn);
 
         // Test create
         let todo = Todo::new("Test Todo".into(), None);
@@ -151,8 +139,9 @@ mod tests {
         assert_eq!(updated_result.title, "Updated Todo");
 
         // Test delete
-        repo.delete(updated_result.id).await.unwrap();
-        let deleted_todo = repo.find_by_id(updated_result.id).await;
+        let target_id = updated_result.id;
+        repo.delete(updated_result).await.unwrap();
+        let deleted_todo = repo.find_by_id(target_id).await;
         assert!(deleted_todo.is_err());
     }
 }
