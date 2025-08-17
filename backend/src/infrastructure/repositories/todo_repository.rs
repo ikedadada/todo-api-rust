@@ -4,7 +4,7 @@ use crate::infrastructure::repositories::data_models::prelude::Todos as TodoTabl
 use crate::infrastructure::repositories::data_models::todos;
 use async_trait::async_trait;
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, DbConn, EntityTrait};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait};
 use uuid::Uuid;
 
 impl From<todos::Model> for Todo {
@@ -32,30 +32,36 @@ impl From<Todo> for todos::ActiveModel {
 }
 
 #[derive(Clone)]
-pub struct TodoRepositoryImpl {
-    conn: DbConn,
-}
+pub struct TodoRepositoryImpl {}
 
 impl TodoRepositoryImpl {
-    pub fn new(conn: DbConn) -> Self {
-        Self { conn }
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl Default for TodoRepositoryImpl {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 #[async_trait]
-impl TodoRepository for TodoRepositoryImpl {
+impl TodoRepository<sea_orm::DatabaseConnection> for TodoRepositoryImpl {
     async fn find_all(
         &self,
+        conn: &sea_orm::DatabaseConnection,
     ) -> Result<Vec<Todo>, crate::domain::repositories::errors::RepositoryError> {
-        let todos = TodoTable::find().all(&self.conn).await?;
+        let todos = TodoTable::find().all(conn).await?;
         Ok(todos.into_iter().map(Todo::from).collect())
     }
 
     async fn find_by_id(
         &self,
+        conn: &sea_orm::DatabaseConnection,
         id: Uuid,
     ) -> Result<Todo, crate::domain::repositories::errors::RepositoryError> {
-        let todo = TodoTable::find_by_id(id).one(&self.conn).await?;
+        let todo = TodoTable::find_by_id(id).one(conn).await?;
         match todo {
             Some(todo) => Ok(Todo::from(todo)),
             None => Err(
@@ -69,28 +75,31 @@ impl TodoRepository for TodoRepositoryImpl {
 
     async fn create(
         &self,
+        conn: &sea_orm::DatabaseConnection,
         todo: Todo,
     ) -> Result<Todo, crate::domain::repositories::errors::RepositoryError> {
         let todo: todos::ActiveModel = todo.into();
-        let todo: todos::Model = todo.insert(&self.conn).await?;
+        let todo: todos::Model = todo.insert(conn).await?;
         Ok(todo.into())
     }
 
     async fn update(
         &self,
+        conn: &sea_orm::DatabaseConnection,
         todo: Todo,
     ) -> Result<Todo, crate::domain::repositories::errors::RepositoryError> {
         let todo: todos::ActiveModel = todo.into();
-        let todo: todos::Model = todo.update(&self.conn).await?;
+        let todo: todos::Model = todo.update(conn).await?;
         Ok(Todo::from(todo))
     }
 
     async fn delete(
         &self,
+        conn: &sea_orm::DatabaseConnection,
         todo: Todo,
     ) -> Result<(), crate::domain::repositories::errors::RepositoryError> {
         let todo: todos::ActiveModel = todo.into();
-        todo.delete(&self.conn).await?;
+        todo.delete(conn).await?;
         Ok(())
     }
 }
@@ -117,31 +126,31 @@ mod tests {
             .await
             .expect("create migrator");
 
-        let repo = TodoRepositoryImpl::new(conn);
+        let repo = TodoRepositoryImpl::new();
 
         // Test create
         let todo = Todo::new("Test Todo".into(), None);
-        let created_todo = repo.create(todo).await.unwrap();
+        let created_todo = repo.create(&conn, todo).await.unwrap();
         assert_eq!(created_todo.title, "Test Todo");
 
         // Test find_all
-        let todos = repo.find_all().await.unwrap();
+        let todos = repo.find_all(&conn).await.unwrap();
         assert!(!todos.is_empty());
 
         // Test find_by_id
-        let found_todo = repo.find_by_id(created_todo.id).await.unwrap();
+        let found_todo = repo.find_by_id(&conn, created_todo.id).await.unwrap();
         assert_eq!(found_todo.title, "Test Todo");
 
         // Test update
         let mut updated_todo = created_todo;
         updated_todo.title = "Updated Todo".into();
-        let updated_result = repo.update(updated_todo).await.unwrap();
+        let updated_result = repo.update(&conn, updated_todo).await.unwrap();
         assert_eq!(updated_result.title, "Updated Todo");
 
         // Test delete
         let target_id = updated_result.id;
-        repo.delete(updated_result).await.unwrap();
-        let deleted_todo = repo.find_by_id(target_id).await;
+        repo.delete(&conn, updated_result).await.unwrap();
+        let deleted_todo = repo.find_by_id(&conn, target_id).await;
         assert!(deleted_todo.is_err());
     }
 }

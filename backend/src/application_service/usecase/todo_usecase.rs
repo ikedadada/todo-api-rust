@@ -8,32 +8,34 @@ use async_trait::async_trait;
 use uuid::Uuid;
 
 #[async_trait]
-pub trait TodoUsecase {
-    async fn get_all_todos(&self) -> Result<Vec<Todo>, UsecaseError>;
-    async fn get_todo_by_id(&self, id: Uuid) -> Result<Todo, UsecaseError>;
+pub trait TodoUsecase<C>: Send + Sync + 'static {
+    async fn get_all_todos(&self, conn: &C) -> Result<Vec<Todo>, UsecaseError>;
+    async fn get_todo_by_id(&self, conn: &C, id: Uuid) -> Result<Todo, UsecaseError>;
     async fn create_todo(
         &self,
+        conn: &C,
         title: String,
         description: Option<String>,
     ) -> Result<Todo, UsecaseError>;
     async fn update_todo(
         &self,
+        conn: &C,
         id: Uuid,
         title: String,
         description: Option<String>,
     ) -> Result<Todo, UsecaseError>;
-    async fn delete_todo(&self, id: Uuid) -> Result<(), UsecaseError>;
-    async fn mark_todo_completed(&self, id: Uuid) -> Result<Todo, UsecaseError>;
-    async fn unmark_todo_completed(&self, id: Uuid) -> Result<Todo, UsecaseError>;
+    async fn delete_todo(&self, conn: &C, id: Uuid) -> Result<(), UsecaseError>;
+    async fn mark_todo_completed(&self, conn: &C, id: Uuid) -> Result<Todo, UsecaseError>;
+    async fn unmark_todo_completed(&self, conn: &C, id: Uuid) -> Result<Todo, UsecaseError>;
 }
 
 #[derive(Clone)]
-pub struct TodoUsecaseImpl<T: TodoRepository> {
-    repository: Arc<T>,
+pub struct TodoUsecaseImpl<R> {
+    repository: Arc<R>,
 }
 
-impl<T: TodoRepository> TodoUsecaseImpl<T> {
-    pub fn new(repository: T) -> Self {
+impl<R> TodoUsecaseImpl<R> {
+    pub fn new(repository: R) -> Self {
         Self {
             repository: Arc::new(repository),
         }
@@ -41,56 +43,62 @@ impl<T: TodoRepository> TodoUsecaseImpl<T> {
 }
 
 #[async_trait]
-impl<T: TodoRepository + Send + Sync> TodoUsecase for TodoUsecaseImpl<T> {
-    async fn get_all_todos(&self) -> Result<Vec<Todo>, UsecaseError> {
-        let todos = self.repository.find_all().await?;
+impl<R, C> TodoUsecase<C> for TodoUsecaseImpl<R>
+where
+    R: TodoRepository<C> + Send + Sync + 'static,
+    C: Send + Sync + 'static,
+{
+    async fn get_all_todos(&self, conn: &C) -> Result<Vec<Todo>, UsecaseError> {
+        let todos = self.repository.find_all(conn).await?;
         Ok(todos)
     }
 
-    async fn get_todo_by_id(&self, id: Uuid) -> Result<Todo, UsecaseError> {
-        let todo = self.repository.find_by_id(id).await?;
+    async fn get_todo_by_id(&self, conn: &C, id: Uuid) -> Result<Todo, UsecaseError> {
+        let todo = self.repository.find_by_id(conn, id).await?;
         Ok(todo)
     }
 
     async fn create_todo(
         &self,
+        conn: &C,
         title: String,
         description: Option<String>,
     ) -> Result<Todo, UsecaseError> {
         let todo = Todo::new(title, description);
-        let new_todo = self.repository.create(todo).await?;
-        Ok(new_todo)
+        let todo = self.repository.create(conn, todo).await?;
+        Ok(todo)
     }
 
     async fn update_todo(
         &self,
+        conn: &C,
         id: Uuid,
         title: String,
         description: Option<String>,
     ) -> Result<Todo, UsecaseError> {
-        let mut todo = self.repository.find_by_id(id).await?;
+        let mut todo = self.repository.find_by_id(conn, id).await?;
         todo.update(title, description);
-        let new_todo = self.repository.update(todo).await?;
+        let new_todo = self.repository.update(conn, todo).await?;
         Ok(new_todo)
     }
 
-    async fn delete_todo(&self, id: Uuid) -> Result<(), UsecaseError> {
-        let todo = self.repository.find_by_id(id).await?;
-        self.repository.delete(todo).await?;
+    async fn delete_todo(&self, conn: &C, id: Uuid) -> Result<(), UsecaseError> {
+        let todo = self.repository.find_by_id(conn, id).await?;
+        self.repository.delete(conn, todo).await?;
         Ok(())
     }
 
-    async fn mark_todo_completed(&self, id: Uuid) -> Result<Todo, UsecaseError> {
-        let mut todo = self.repository.find_by_id(id).await?;
+    async fn mark_todo_completed(&self, conn: &C, id: Uuid) -> Result<Todo, UsecaseError> {
+        let mut todo = self.repository.find_by_id(conn, id).await?;
         todo.mark_completed()?;
-        let new_todo = self.repository.update(todo).await?;
+        let new_todo = self.repository.update(conn, todo).await?;
         Ok(new_todo)
     }
 
-    async fn unmark_todo_completed(&self, id: Uuid) -> Result<Todo, UsecaseError> {
-        let mut todo = self.repository.find_by_id(id).await?;
+    async fn unmark_todo_completed(&self, conn: &C, id: Uuid) -> Result<Todo, UsecaseError> {
+        let mut todo = self.repository.find_by_id(conn, id).await?;
         todo.unmark_completed()?;
-        let new_todo = self.repository.update(todo).await?;
+        let new_todo = self.repository.update(conn, todo).await?;
         Ok(new_todo)
     }
 }
@@ -128,14 +136,20 @@ mod tests {
         }
     }
 
+    struct MockConnection;
+
     #[async_trait]
-    impl TodoRepository for MockTodoRepository {
-        async fn find_all(&self) -> Result<Vec<Todo>, RepositoryError> {
+    impl TodoRepository<MockConnection> for MockTodoRepository {
+        async fn find_all(&self, _conn: &MockConnection) -> Result<Vec<Todo>, RepositoryError> {
             let todos = self.todos.lock().unwrap();
             Ok(todos.clone())
         }
 
-        async fn find_by_id(&self, id: Uuid) -> Result<Todo, RepositoryError> {
+        async fn find_by_id(
+            &self,
+            _conn: &MockConnection,
+            id: Uuid,
+        ) -> Result<Todo, RepositoryError> {
             let todos = self.todos.lock().unwrap();
             todos
                 .iter()
@@ -147,12 +161,20 @@ mod tests {
                 )))
         }
 
-        async fn create(&self, todo: Todo) -> Result<Todo, RepositoryError> {
+        async fn create(
+            &self,
+            _conn: &MockConnection,
+            todo: Todo,
+        ) -> Result<Todo, RepositoryError> {
             self.todos.lock().unwrap().push(todo.clone());
             Ok(todo)
         }
 
-        async fn update(&self, todo: Todo) -> Result<Todo, RepositoryError> {
+        async fn update(
+            &self,
+            _conn: &MockConnection,
+            todo: Todo,
+        ) -> Result<Todo, RepositoryError> {
             let target_id = todo.id;
             let mut todos = self.todos.lock().unwrap();
             todos
@@ -168,7 +190,7 @@ mod tests {
                 )))
         }
 
-        async fn delete(&self, todo: Todo) -> Result<(), RepositoryError> {
+        async fn delete(&self, _conn: &MockConnection, todo: Todo) -> Result<(), RepositoryError> {
             let mut todos = self.todos.lock().unwrap();
             if let Some(index) = todos.iter().position(|t| t.id == todo.id) {
                 todos.remove(index);
@@ -187,7 +209,7 @@ mod tests {
         let repository = MockTodoRepository::new();
         let usecase = TodoUsecaseImpl::new(repository);
 
-        let result = usecase.get_all_todos().await;
+        let result = usecase.get_all_todos(&MockConnection).await;
 
         assert!(result.is_ok());
         let todos = result.unwrap();
@@ -202,7 +224,10 @@ mod tests {
         let usecase = TodoUsecaseImpl::new(repository);
 
         let result = usecase
-            .get_todo_by_id(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap())
+            .get_todo_by_id(
+                &MockConnection,
+                Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap(),
+            )
             .await;
 
         assert!(result.is_ok());
@@ -218,7 +243,11 @@ mod tests {
         let usecase = TodoUsecaseImpl::new(repository.clone());
 
         let result = usecase
-            .create_todo("New Todo".into(), Some("Description".into()))
+            .create_todo(
+                &MockConnection,
+                "New Todo".into(),
+                Some("Description".into()),
+            )
             .await;
 
         assert!(result.is_ok());
@@ -234,6 +263,7 @@ mod tests {
 
         let result = usecase
             .update_todo(
+                &MockConnection,
                 Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap(),
                 "Updated Todo".into(),
                 Some("Updated Description".into()),
@@ -262,7 +292,10 @@ mod tests {
         let usecase = TodoUsecaseImpl::new(repository.clone());
 
         let result = usecase
-            .delete_todo(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap())
+            .delete_todo(
+                &MockConnection,
+                Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap(),
+            )
             .await;
 
         assert!(result.is_ok());
@@ -276,7 +309,10 @@ mod tests {
         let usecase = TodoUsecaseImpl::new(repository.clone());
 
         let result = usecase
-            .mark_todo_completed(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap())
+            .mark_todo_completed(
+                &MockConnection,
+                Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap(),
+            )
             .await;
 
         assert!(result.is_ok());
@@ -290,7 +326,10 @@ mod tests {
         let usecase = TodoUsecaseImpl::new(repository.clone());
 
         let result = usecase
-            .unmark_todo_completed(Uuid::parse_str("b1b2b3b4c1c2d1d2e1e2e3e4e5e6e7e8").unwrap())
+            .unmark_todo_completed(
+                &MockConnection,
+                Uuid::parse_str("b1b2b3b4c1c2d1d2e1e2e3e4e5e6e7e8").unwrap(),
+            )
             .await;
 
         assert!(result.is_ok());

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::{BoxError, Router, error_handling::HandleErrorLayer, serve};
@@ -66,7 +67,7 @@ async fn app(config: &Config) -> Router {
         .sqlx_logging(true);
     let conn = Database::connect(opt).await.expect("connect db");
 
-    let todo_repository = TodoRepositoryImpl::new(conn);
+    let todo_repository = TodoRepositoryImpl::new();
     let todo_usecase = TodoUsecaseImpl::new(todo_repository);
     Router::new()
         .nest(
@@ -77,7 +78,7 @@ async fn app(config: &Config) -> Router {
         .nest("/wait", presentation::wait_handler::create_wait_router())
         .nest(
             "/todos",
-            presentation::todo_handler::create_todo_router(todo_usecase),
+            presentation::todo_handler::create_todo_router(Arc::new(todo_usecase), Arc::new(conn)),
         )
 }
 

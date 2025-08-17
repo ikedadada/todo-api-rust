@@ -18,28 +18,39 @@ use crate::{
     presentation::{errors::AppError, validator::ValidatedJson},
 };
 
-#[derive(Clone)]
-pub struct AppState<T: TodoUsecase> {
-    todo_usecase: Arc<T>,
+pub struct AppState<C> {
+    todo_usecase: Arc<dyn TodoUsecase<C> + Send + Sync + 'static>,
+    db: Arc<C>,
 }
 
-pub fn create_todo_router<T: TodoUsecase + Send + Sync + 'static + Clone>(
-    todo_usecase: T,
-) -> Router {
-    let app_state = AppState {
-        todo_usecase: Arc::new(todo_usecase),
-    };
+impl<C> Clone for AppState<C> {
+    fn clone(&self) -> Self {
+        Self {
+            todo_usecase: Arc::clone(&self.todo_usecase),
+            db: Arc::clone(&self.db),
+        }
+    }
+}
+
+pub fn create_todo_router<C>(
+    todo_usecase: Arc<dyn TodoUsecase<C> + Send + Sync + 'static>,
+    db: Arc<C>,
+) -> Router
+where
+    C: Send + Sync + 'static,
+{
+    let app_state = AppState { todo_usecase, db };
 
     Router::new()
-        .route("/", get(get_all_todos::<T>).post(post_todo::<T>))
+        .route("/", get(get_all_todos::<C>).post(post_todo::<C>))
         .route(
             "/{id}",
-            get(get_todo_by_id::<T>)
-                .put(update_todo::<T>)
-                .delete(delete_todo::<T>),
+            get(get_todo_by_id::<C>)
+                .put(update_todo::<C>)
+                .delete(delete_todo::<C>),
         )
-        .route("/{id}/complete", put(mark_todo_completed::<T>))
-        .route("/{id}/uncomplete", put(unmark_todo_completed::<T>))
+        .route("/{id}/complete", put(mark_todo_completed::<C>))
+        .route("/{id}/uncomplete", put(unmark_todo_completed::<C>))
         .with_state(app_state)
 }
 #[derive(Serialize)]
@@ -77,10 +88,14 @@ struct UpdateTodoRequest {
     description: Option<String>,
 }
 
-async fn get_all_todos<T: TodoUsecase>(
-    State(app_state): State<AppState<T>>,
-) -> Result<impl IntoResponse, AppError> {
-    let todos = app_state.todo_usecase.get_all_todos().await?;
+async fn get_all_todos<C>(
+    State(app_state): State<AppState<C>>,
+) -> Result<impl IntoResponse, AppError>
+where
+    C: Send + Sync + 'static,
+{
+    let conn = app_state.db.clone();
+    let todos = app_state.todo_usecase.get_all_todos(&conn).await?;
     Ok((
         StatusCode::OK,
         Json(
@@ -92,57 +107,87 @@ async fn get_all_todos<T: TodoUsecase>(
     ))
 }
 
-async fn get_todo_by_id<T: TodoUsecase>(
-    State(app_state): State<AppState<T>>,
+async fn get_todo_by_id<C>(
+    State(app_state): State<AppState<C>>,
     WithRejection(Path(id), _): WithRejection<Path<Uuid>, AppError>,
-) -> Result<Json<TodoResponse>, AppError> {
-    let todo = app_state.todo_usecase.get_todo_by_id(id).await?;
+) -> Result<Json<TodoResponse>, AppError>
+where
+    C: Send + Sync + 'static,
+{
+    let conn = app_state.db;
+    let todo = app_state.todo_usecase.get_todo_by_id(&conn, id).await?;
     Ok(Json(TodoResponse::from(todo)))
 }
 
-async fn post_todo<T: TodoUsecase>(
-    State(app_state): State<AppState<T>>,
+async fn post_todo<C>(
+    State(app_state): State<AppState<C>>,
     ValidatedJson(input): ValidatedJson<CreateTodoRequest>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<impl IntoResponse, AppError>
+where
+    C: Send + Sync + 'static,
+{
+    let conn = app_state.db;
     let todo = app_state
         .todo_usecase
-        .create_todo(input.title, input.description)
+        .create_todo(&conn, input.title, input.description)
         .await?;
     Ok((StatusCode::CREATED, Json(TodoResponse::from(todo))))
 }
 
-async fn update_todo<T: TodoUsecase>(
-    State(app_state): State<AppState<T>>,
+async fn update_todo<C>(
+    State(app_state): State<AppState<C>>,
     WithRejection(Path(id), _): WithRejection<Path<Uuid>, AppError>,
     ValidatedJson(input): ValidatedJson<UpdateTodoRequest>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<impl IntoResponse, AppError>
+where
+    C: Send + Sync + 'static,
+{
+    let conn = app_state.db;
     let todo = app_state
         .todo_usecase
-        .update_todo(id, input.title, input.description)
+        .update_todo(&conn, id, input.title, input.description)
         .await?;
     Ok((StatusCode::OK, Json(TodoResponse::from(todo))))
 }
 
-async fn delete_todo<T: TodoUsecase>(
-    State(app_state): State<AppState<T>>,
+async fn delete_todo<C>(
+    State(app_state): State<AppState<C>>,
     WithRejection(Path(id), _): WithRejection<Path<Uuid>, AppError>,
-) -> Result<impl IntoResponse, AppError> {
-    app_state.todo_usecase.delete_todo(id).await?;
+) -> Result<impl IntoResponse, AppError>
+where
+    C: Send + Sync + 'static,
+{
+    let conn = app_state.db;
+    app_state.todo_usecase.delete_todo(&conn, id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn mark_todo_completed<T: TodoUsecase>(
-    State(app_state): State<AppState<T>>,
+async fn mark_todo_completed<C>(
+    State(app_state): State<AppState<C>>,
     WithRejection(Path(id), _): WithRejection<Path<Uuid>, AppError>,
-) -> Result<impl IntoResponse, AppError> {
-    let todo = app_state.todo_usecase.mark_todo_completed(id).await?;
+) -> Result<impl IntoResponse, AppError>
+where
+    C: Send + Sync + 'static,
+{
+    let conn = app_state.db;
+    let todo = app_state
+        .todo_usecase
+        .mark_todo_completed(&conn, id)
+        .await?;
     Ok((StatusCode::OK, Json(TodoResponse::from(todo))))
 }
 
-async fn unmark_todo_completed<T: TodoUsecase>(
-    State(app_state): State<AppState<T>>,
+async fn unmark_todo_completed<C>(
+    State(app_state): State<AppState<C>>,
     WithRejection(Path(id), _): WithRejection<Path<Uuid>, AppError>,
-) -> Result<impl IntoResponse, AppError> {
-    let todo = app_state.todo_usecase.unmark_todo_completed(id).await?;
+) -> Result<impl IntoResponse, AppError>
+where
+    C: Send + Sync + 'static,
+{
+    let conn = app_state.db;
+    let todo = app_state
+        .todo_usecase
+        .unmark_todo_completed(&conn, id)
+        .await?;
     Ok((StatusCode::OK, Json(TodoResponse::from(todo))))
 }
