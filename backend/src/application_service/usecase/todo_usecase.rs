@@ -75,7 +75,8 @@ impl<T: TodoRepository + Send + Sync> TodoUsecase for TodoUsecaseImpl<T> {
     }
 
     async fn delete_todo(&self, id: Uuid) -> Result<(), UsecaseError> {
-        self.repository.delete(id).await?;
+        let todo = self.repository.find_by_id(id).await?;
+        self.repository.delete(todo).await?;
         Ok(())
     }
 
@@ -140,7 +141,10 @@ mod tests {
                 .iter()
                 .find(|todo| todo.id == id)
                 .cloned()
-                .ok_or(RepositoryError::NotFound)
+                .ok_or(RepositoryError::NotFound(format!(
+                    "Todo with id {} not found",
+                    id
+                )))
         }
 
         async fn create(&self, todo: Todo) -> Result<Todo, RepositoryError> {
@@ -149,6 +153,7 @@ mod tests {
         }
 
         async fn update(&self, todo: Todo) -> Result<Todo, RepositoryError> {
+            let target_id = todo.id;
             let mut todos = self.todos.lock().unwrap();
             todos
                 .iter_mut()
@@ -157,16 +162,22 @@ mod tests {
                     *t = todo.clone();
                     todo
                 })
-                .ok_or(RepositoryError::NotFound)
+                .ok_or(RepositoryError::NotFound(format!(
+                    "Todo with id {} not found",
+                    target_id
+                )))
         }
 
-        async fn delete(&self, id: Uuid) -> Result<(), RepositoryError> {
+        async fn delete(&self, todo: Todo) -> Result<(), RepositoryError> {
             let mut todos = self.todos.lock().unwrap();
-            if let Some(index) = todos.iter().position(|t| t.id == id) {
+            if let Some(index) = todos.iter().position(|t| t.id == todo.id) {
                 todos.remove(index);
                 Ok(())
             } else {
-                Err(RepositoryError::NotFound)
+                Err(RepositoryError::NotFound(format!(
+                    "Todo with id {} not found",
+                    todo.id
+                )))
             }
         }
     }
