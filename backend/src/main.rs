@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use axum::{BoxError, Router, error_handling::HandleErrorLayer, serve};
 
+use sea_orm::{ConnectOptions, Database};
 use todo_api_rust::application_service::usecase::todo_usecase::TodoUsecaseImpl;
 use todo_api_rust::infrastructure::config::Config;
 use todo_api_rust::infrastructure::repositories::todo_repository::TodoRepositoryImpl;
@@ -58,11 +59,14 @@ async fn main() {
 async fn app(config: &Config) -> Router {
     let database_url = &config.database_url;
 
-    let pool = sqlx::PgPool::connect(database_url)
-        .await
-        .expect("Failed to connect to the database");
+    let mut opt = ConnectOptions::new(database_url.to_string());
+    opt.max_connections(10)
+        .min_connections(1)
+        .connect_timeout(Duration::from_secs(5))
+        .sqlx_logging(true);
+    let conn = Database::connect(opt).await.expect("connect db");
 
-    let todo_repository = TodoRepositoryImpl::new(pool.clone());
+    let todo_repository = TodoRepositoryImpl::new(conn);
     let todo_usecase = TodoUsecaseImpl::new(todo_repository);
     Router::new()
         .nest(

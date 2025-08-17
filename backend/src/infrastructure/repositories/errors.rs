@@ -1,10 +1,10 @@
 use crate::domain::repositories::errors::RepositoryError;
-use sqlx::Error;
+use sea_orm::error::DbErr;
 
-impl From<Error> for RepositoryError {
-    fn from(error: sqlx::Error) -> Self {
+impl From<DbErr> for RepositoryError {
+    fn from(error: DbErr) -> Self {
         match error {
-            Error::RowNotFound => RepositoryError::NotFound,
+            DbErr::RecordNotFound(msg) => RepositoryError::NotFound(msg),
             _ => RepositoryError::Unexpected(error.to_string()),
         }
     }

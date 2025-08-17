@@ -1,6 +1,3 @@
 {
-  "rust-analyzer.linkedProjects": [
-    "backend/Cargo.toml"
-  ],
   "rust-analyzer.cargo.features": ["db-tests"]
 }

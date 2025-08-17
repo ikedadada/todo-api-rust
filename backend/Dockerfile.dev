@@ -2,9 +2,14 @@ FROM rust:1.89.0-alpine AS build
 
 WORKDIR /app
 
-RUN apk update && apk add --no-cache musl-dev build-base
+RUN apk update && apk add --no-cache musl-dev build-base pkgconf openssl-dev openssl
+
+# musl の静的CRTを無効化
+ENV RUSTFLAGS='-C target-feature=-crt-static'
 
 COPY . .
+
+RUN make init
 
 RUN cargo install cargo-watch --locked
 
