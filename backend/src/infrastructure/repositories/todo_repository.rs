@@ -1,5 +1,5 @@
-use crate::domain::models::todo::Todo;
 use crate::domain::repositories::todo_repository::TodoRepository;
+use crate::domain::{models::todo::Todo, repositories::conn::Conn};
 use crate::infrastructure::repositories::data_models::prelude::Todos as TodoTable;
 use crate::infrastructure::repositories::data_models::todos;
 use async_trait::async_trait;
@@ -47,20 +47,26 @@ impl Default for TodoRepositoryImpl {
 }
 
 #[async_trait]
-impl TodoRepository<sea_orm::DatabaseConnection> for TodoRepositoryImpl {
-    async fn find_all(
+impl TodoRepository for TodoRepositoryImpl {
+    async fn find_all<C>(
         &self,
-        conn: &sea_orm::DatabaseConnection,
-    ) -> Result<Vec<Todo>, crate::domain::repositories::errors::RepositoryError> {
+        conn: &C,
+    ) -> Result<Vec<Todo>, crate::domain::repositories::errors::RepositoryError>
+    where
+        C: Conn,
+    {
         let todos = TodoTable::find().all(conn).await?;
         Ok(todos.into_iter().map(Todo::from).collect())
     }
 
-    async fn find_by_id(
+    async fn find_by_id<C>(
         &self,
-        conn: &sea_orm::DatabaseConnection,
+        conn: &C,
         id: Uuid,
-    ) -> Result<Todo, crate::domain::repositories::errors::RepositoryError> {
+    ) -> Result<Todo, crate::domain::repositories::errors::RepositoryError>
+    where
+        C: Conn,
+    {
         let todo = TodoTable::find_by_id(id).one(conn).await?;
         match todo {
             Some(todo) => Ok(Todo::from(todo)),
@@ -73,31 +79,40 @@ impl TodoRepository<sea_orm::DatabaseConnection> for TodoRepositoryImpl {
         }
     }
 
-    async fn create(
+    async fn create<C>(
         &self,
-        conn: &sea_orm::DatabaseConnection,
+        conn: &C,
         todo: Todo,
-    ) -> Result<Todo, crate::domain::repositories::errors::RepositoryError> {
+    ) -> Result<Todo, crate::domain::repositories::errors::RepositoryError>
+    where
+        C: Conn,
+    {
         let todo: todos::ActiveModel = todo.into();
         let todo: todos::Model = todo.insert(conn).await?;
         Ok(todo.into())
     }
 
-    async fn update(
+    async fn update<C>(
         &self,
-        conn: &sea_orm::DatabaseConnection,
+        conn: &C,
         todo: Todo,
-    ) -> Result<Todo, crate::domain::repositories::errors::RepositoryError> {
+    ) -> Result<Todo, crate::domain::repositories::errors::RepositoryError>
+    where
+        C: Conn,
+    {
         let todo: todos::ActiveModel = todo.into();
         let todo: todos::Model = todo.update(conn).await?;
         Ok(Todo::from(todo))
     }
 
-    async fn delete(
+    async fn delete<C>(
         &self,
-        conn: &sea_orm::DatabaseConnection,
+        conn: &C,
         todo: Todo,
-    ) -> Result<(), crate::domain::repositories::errors::RepositoryError> {
+    ) -> Result<(), crate::domain::repositories::errors::RepositoryError>
+    where
+        C: Conn,
+    {
         let todo: todos::ActiveModel = todo.into();
         todo.delete(conn).await?;
         Ok(())

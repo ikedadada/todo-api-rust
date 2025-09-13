@@ -7,6 +7,7 @@ use sea_orm::{ConnectOptions, Database};
 use todo_api_rust::application_service::usecase::todo_usecase::TodoUsecaseImpl;
 use todo_api_rust::infrastructure::config::Config;
 use todo_api_rust::infrastructure::repositories::todo_repository::TodoRepositoryImpl;
+use todo_api_rust::infrastructure::services::transaction_service::TransactionServiceImpl;
 use todo_api_rust::presentation;
 use todo_api_rust::presentation::errors::{AppError, ErrorBody};
 use tokio::net::TcpListener;
@@ -68,7 +69,8 @@ async fn app(config: &Config) -> Router {
     let conn = Database::connect(opt).await.expect("connect db");
 
     let todo_repository = TodoRepositoryImpl::new();
-    let todo_usecase = TodoUsecaseImpl::new(todo_repository);
+    let transaction_service = TransactionServiceImpl::new();
+    let todo_usecase = TodoUsecaseImpl::new(todo_repository, transaction_service);
     Router::new()
         .nest(
             "/health",

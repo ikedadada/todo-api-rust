@@ -31,7 +31,7 @@ impl From<UsecaseError> for AppError {
             }),
             UsecaseError::Unexpected(msg) => AppError::Internal(ErrorBody {
                 code: "500",
-                message: format!("Unexpected error: {}", msg),
+                message: format!("Internal Server Error: {}", msg),
             }),
         }
     }

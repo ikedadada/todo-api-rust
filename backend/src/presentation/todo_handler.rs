@@ -14,7 +14,7 @@ use validator::Validate;
 
 use crate::{
     application_service::usecase::todo_usecase::TodoUsecase,
-    domain::models::todo::Todo,
+    domain::{models::todo::Todo, repositories::conn::Conn},
     presentation::{errors::AppError, validator::ValidatedJson},
 };
 
@@ -34,8 +34,8 @@ impl<C, U> Clone for AppState<C, U> {
 
 pub fn create_todo_router<C, U>(todo_usecase: Arc<U>, db: Arc<C>) -> Router
 where
-    C: Send + Sync + 'static,
-    U: TodoUsecase<C> + Send + Sync + 'static,
+    C: Conn + 'static,
+    U: TodoUsecase + Send + Sync + 'static,
 {
     let app_state: AppState<C, U> = AppState { todo_usecase, db };
 
@@ -47,14 +47,8 @@ where
                 .put(update_todo::<C, U>)
                 .delete(delete_todo::<C, U>),
         )
-        .route(
-            "/{id}/complete",
-            put(mark_todo_completed::<C, U>),
-        )
-        .route(
-            "/{id}/uncomplete",
-            put(unmark_todo_completed::<C, U>),
-        )
+        .route("/{id}/complete", put(mark_todo_completed::<C, U>))
+        .route("/{id}/uncomplete", put(unmark_todo_completed::<C, U>))
         .with_state(app_state)
 }
 #[derive(Serialize)]
@@ -96,8 +90,8 @@ async fn get_all_todos<C, U>(
     State(app_state): State<AppState<C, U>>,
 ) -> Result<impl IntoResponse, AppError>
 where
-    C: Send + Sync + 'static,
-    U: TodoUsecase<C> + Send + Sync + 'static,
+    C: Conn + 'static,
+    U: TodoUsecase + Send + Sync + 'static,
 {
     let conn = app_state.db.as_ref();
     let todos = app_state.todo_usecase.get_all_todos(conn).await?;
@@ -117,8 +111,8 @@ async fn get_todo_by_id<C, U>(
     WithRejection(Path(id), _): WithRejection<Path<Uuid>, AppError>,
 ) -> Result<Json<TodoResponse>, AppError>
 where
-    C: Send + Sync + 'static,
-    U: TodoUsecase<C> + Send + Sync + 'static,
+    C: Conn + 'static,
+    U: TodoUsecase + Send + Sync + 'static,
 {
     let conn = app_state.db.as_ref();
     let todo = app_state.todo_usecase.get_todo_by_id(conn, id).await?;
@@ -130,8 +124,8 @@ async fn post_todo<C, U>(
     ValidatedJson(input): ValidatedJson<CreateTodoRequest>,
 ) -> Result<impl IntoResponse, AppError>
 where
-    C: Send + Sync + 'static,
-    U: TodoUsecase<C> + Send + Sync + 'static,
+    C: Conn + 'static,
+    U: TodoUsecase + Send + Sync + 'static,
 {
     let conn = app_state.db.as_ref();
     let todo = app_state
@@ -147,8 +141,8 @@ async fn update_todo<C, U>(
     ValidatedJson(input): ValidatedJson<UpdateTodoRequest>,
 ) -> Result<impl IntoResponse, AppError>
 where
-    C: Send + Sync + 'static,
-    U: TodoUsecase<C> + Send + Sync + 'static,
+    C: Conn + 'static,
+    U: TodoUsecase + Send + Sync + 'static,
 {
     let conn = app_state.db.as_ref();
     let todo = app_state
@@ -163,8 +157,8 @@ async fn delete_todo<C, U>(
     WithRejection(Path(id), _): WithRejection<Path<Uuid>, AppError>,
 ) -> Result<impl IntoResponse, AppError>
 where
-    C: Send + Sync + 'static,
-    U: TodoUsecase<C> + Send + Sync + 'static,
+    C: Conn + 'static,
+    U: TodoUsecase + Send + Sync + 'static,
 {
     let conn = app_state.db.as_ref();
     app_state.todo_usecase.delete_todo(conn, id).await?;
@@ -176,8 +170,8 @@ async fn mark_todo_completed<C, U>(
     WithRejection(Path(id), _): WithRejection<Path<Uuid>, AppError>,
 ) -> Result<impl IntoResponse, AppError>
 where
-    C: Send + Sync + 'static,
-    U: TodoUsecase<C> + Send + Sync + 'static,
+    C: Conn + 'static,
+    U: TodoUsecase + Send + Sync + 'static,
 {
     let conn = app_state.db.as_ref();
     let todo = app_state.todo_usecase.mark_todo_completed(conn, id).await?;
@@ -189,8 +183,8 @@ async fn unmark_todo_completed<C, U>(
     WithRejection(Path(id), _): WithRejection<Path<Uuid>, AppError>,
 ) -> Result<impl IntoResponse, AppError>
 where
-    C: Send + Sync + 'static,
-    U: TodoUsecase<C> + Send + Sync + 'static,
+    C: Conn + 'static,
+    U: TodoUsecase + Send + Sync + 'static,
 {
     let conn = app_state.db.as_ref();
     let todo = app_state
