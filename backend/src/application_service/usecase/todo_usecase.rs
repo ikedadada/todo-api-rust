@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use crate::{
-    application_service::usecase::errors::UsecaseError,
+    application_service::{
+        service::transaction_service::{TransactionError, TransactionService},
+        usecase::errors::UsecaseError,
+    },
     domain::{
         models::todo::Todo,
         repositories::{conn::Conn, todo_repository::TodoRepository},
@@ -47,22 +50,25 @@ pub trait TodoUsecase: Send + Sync + 'static {
 }
 
 #[derive(Clone)]
-pub struct TodoUsecaseImpl<R> {
+pub struct TodoUsecaseImpl<R, T> {
     repository: Arc<R>,
+    transaction_service: Arc<T>,
 }
 
-impl<R> TodoUsecaseImpl<R> {
-    pub fn new(repository: R) -> Self {
+impl<R, T> TodoUsecaseImpl<R, T> {
+    pub fn new(repository: R, transaction_service: T) -> Self {
         Self {
             repository: Arc::new(repository),
+            transaction_service: Arc::new(transaction_service),
         }
     }
 }
 
 #[async_trait]
-impl<R> TodoUsecase for TodoUsecaseImpl<R>
+impl<R, T> TodoUsecase for TodoUsecaseImpl<R, T>
 where
     R: TodoRepository + Send + Sync + 'static,
+    T: TransactionService + Send + Sync + 'static,
 {
     async fn get_all_todos<C>(&self, conn: &C) -> Result<Vec<Todo>, UsecaseError>
     where
@@ -105,24 +111,34 @@ where
         C: Conn,
     {
         let repository = self.repository.clone();
-        conn.transaction(|conn| {
-            Box::pin(async move {
-                let mut todo = repository.find_by_id(conn, id).await?;
-                todo.update(title, description);
-                let updated_todo = repository.update(conn, todo).await?;
-                Ok::<Todo, UsecaseError>(updated_todo)
+        let todo = self
+            .transaction_service
+            .run(conn, move |tx| {
+                Box::pin(async move {
+                    let mut todo = repository.find_by_id(tx, id).await?;
+                    todo.update(title, description);
+                    let updated_todo = repository.update(tx, todo).await?;
+                    Ok::<Todo, TransactionError>(updated_todo)
+                })
             })
-        })
-        .await
-        .map_err(|e| UsecaseError::Unexpected(e.to_string()))
+            .await?;
+        Ok(todo)
     }
 
     async fn delete_todo<C>(&self, conn: &C, id: Uuid) -> Result<(), UsecaseError>
     where
         C: Conn,
     {
-        let todo = self.repository.find_by_id(conn, id).await?;
-        self.repository.delete(conn, todo).await?;
+        let repository = self.repository.clone();
+        self.transaction_service
+            .run(conn, move |tx| {
+                Box::pin(async move {
+                    let todo = repository.find_by_id(tx, id).await?;
+                    repository.delete(tx, todo).await?;
+                    Ok::<(), TransactionError>(())
+                })
+            })
+            .await?;
         Ok(())
     }
 
@@ -130,20 +146,38 @@ where
     where
         C: Conn,
     {
-        let mut todo = self.repository.find_by_id(conn, id).await?;
-        todo.mark_completed()?;
-        let new_todo = self.repository.update(conn, todo).await?;
-        Ok(new_todo)
+        let repository = self.repository.clone();
+        let todo = self
+            .transaction_service
+            .run(conn, move |tx| {
+                Box::pin(async move {
+                    let mut todo = repository.find_by_id(tx, id).await?;
+                    todo.mark_completed()?;
+                    let new_todo = repository.update(tx, todo).await?;
+                    Ok::<Todo, TransactionError>(new_todo)
+                })
+            })
+            .await?;
+        Ok(todo)
     }
 
     async fn unmark_todo_completed<C>(&self, conn: &C, id: Uuid) -> Result<Todo, UsecaseError>
     where
         C: Conn,
     {
-        let mut todo = self.repository.find_by_id(conn, id).await?;
-        todo.unmark_completed()?;
-        let new_todo = self.repository.update(conn, todo).await?;
-        Ok(new_todo)
+        let repository = self.repository.clone();
+        let todo = self
+            .transaction_service
+            .run(conn, move |tx| {
+                Box::pin(async move {
+                    let mut todo = repository.find_by_id(tx, id).await?;
+                    todo.unmark_completed()?;
+                    let new_todo = repository.update(tx, todo).await?;
+                    Ok::<Todo, TransactionError>(new_todo)
+                })
+            })
+            .await?;
+        Ok(todo)
     }
 }
 
@@ -236,10 +270,39 @@ mod tests {
         }
     }
 
+    struct MockTransactionService;
+
+    impl MockTransactionService {
+        pub fn new() -> Self {
+            Self
+        }
+    }
+
+    #[async_trait]
+    impl TransactionService for MockTransactionService {
+        type Tx<'a>
+            = MockConn
+        where
+            Self: 'a;
+        async fn run<C, F, T>(&self, _: &C, f: F) -> Result<T, TransactionError>
+        where
+            C: Conn,
+            F: for<'tx> FnOnce(
+                    &'tx Self::Tx<'tx>,
+                ) -> std::pin::Pin<
+                    Box<dyn std::future::Future<Output = Result<T, TransactionError>> + Send + 'tx>,
+                > + Send,
+            T: Send,
+        {
+            f(&MockConn).await
+        }
+    }
+
     #[tokio::test]
     async fn test_todo_usecase_impl_get_all_todos() {
         let repository = MockTodoRepository::new();
-        let usecase = TodoUsecaseImpl::new(repository);
+        let transaction_service = MockTransactionService::new();
+        let usecase = TodoUsecaseImpl::new(repository, transaction_service);
 
         let result = usecase.get_all_todos(&MockConn).await;
 
@@ -253,7 +316,8 @@ mod tests {
     #[tokio::test]
     async fn test_todo_usecase_impl_get_todo_by_id() {
         let repository = MockTodoRepository::new();
-        let usecase = TodoUsecaseImpl::new(repository);
+        let transaction_service = MockTransactionService::new();
+        let usecase = TodoUsecaseImpl::new(repository, transaction_service);
 
         let result = usecase
             .get_todo_by_id(
@@ -272,7 +336,8 @@ mod tests {
     #[tokio::test]
     async fn test_todo_usecase_impl_create_todo() {
         let repository = MockTodoRepository::new();
-        let usecase = TodoUsecaseImpl::new(repository.clone());
+        let transaction_service = MockTransactionService::new();
+        let usecase = TodoUsecaseImpl::new(repository.clone(), transaction_service);
 
         let result = usecase
             .create_todo(&MockConn, "New Todo".into(), Some("Description".into()))
@@ -287,7 +352,8 @@ mod tests {
     #[tokio::test]
     async fn test_todo_usecase_impl_update_todo() {
         let repository = MockTodoRepository::new();
-        let usecase = TodoUsecaseImpl::new(repository.clone());
+        let transaction_service = MockTransactionService::new();
+        let usecase = TodoUsecaseImpl::new(repository.clone(), transaction_service);
 
         let result = usecase
             .update_todo(
@@ -317,7 +383,8 @@ mod tests {
     #[tokio::test]
     async fn test_todo_usecase_impl_delete_todo() {
         let repository = MockTodoRepository::new();
-        let usecase = TodoUsecaseImpl::new(repository.clone());
+        let transaction_service = MockTransactionService::new();
+        let usecase = TodoUsecaseImpl::new(repository.clone(), transaction_service);
 
         let result = usecase
             .delete_todo(
@@ -334,7 +401,8 @@ mod tests {
     #[tokio::test]
     async fn test_todo_usecase_impl_mark_todo_completed() {
         let repository = MockTodoRepository::new();
-        let usecase = TodoUsecaseImpl::new(repository.clone());
+        let transaction_service = MockTransactionService::new();
+        let usecase = TodoUsecaseImpl::new(repository.clone(), transaction_service);
 
         let result = usecase
             .mark_todo_completed(
@@ -351,7 +419,8 @@ mod tests {
     #[tokio::test]
     async fn test_todo_usecase_impl_mark_todo_incomplete() {
         let repository = MockTodoRepository::new();
-        let usecase = TodoUsecaseImpl::new(repository.clone());
+        let transaction_service = MockTransactionService::new();
+        let usecase = TodoUsecaseImpl::new(repository.clone(), transaction_service);
 
         let result = usecase
             .unmark_todo_completed(

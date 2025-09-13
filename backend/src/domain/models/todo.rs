@@ -27,7 +27,7 @@ impl Todo {
 
     pub fn mark_completed(&mut self) -> Result<(), DomainError> {
         if self.completed {
-            return Err(DomainError("Todo is already completed".into()));
+            return Err(DomainError::Conflict("Todo is already completed".into()));
         }
         self.completed = true;
         Ok(())
@@ -35,7 +35,7 @@ impl Todo {
 
     pub fn unmark_completed(&mut self) -> Result<(), DomainError> {
         if !self.completed {
-            return Err(DomainError("Todo is not completed".into()));
+            return Err(DomainError::Conflict("Todo is not completed".into()));
         }
         self.completed = false;
         Ok(())
